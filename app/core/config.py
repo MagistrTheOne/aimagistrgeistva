@@ -15,17 +15,23 @@ class AppSettings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
+        env_prefix_parsing=True,  # Enable prefix parsing
     )
 
     # Application
     app_env: str = Field(default="dev", description="Application environment")
     log_level: str = Field(default="INFO", description="Logging level")
 
-    # Database
-    postgres_dsn: SecretStr = Field(
-        default=...,
+    # Database - support both Railway and local formats
+    postgres_dsn: Optional[SecretStr] = Field(
+        default=None,
         description="PostgreSQL connection string",
         alias="POSTGRES_DSN",
+    )
+    database_url: Optional[SecretStr] = Field(
+        default=None,
+        description="Database URL (Railway format)",
+        alias="DATABASE_URL",
     )
 
     # Redis
@@ -36,12 +42,12 @@ class AppSettings(BaseSettings):
 
     # Yandex Cloud
     yc_folder_id: str = Field(
-        default=...,
+        default="",
         description="Yandex Cloud folder ID",
         alias="YC_FOLDER_ID",
     )
     yc_oauth_token: SecretStr = Field(
-        default=...,
+        default="",
         description="Yandex Cloud OAuth token",
         alias="YC_OAUTH_TOKEN",
     )
@@ -74,7 +80,7 @@ class AppSettings(BaseSettings):
 
     # Yandex Translate
     yandex_translate_folder_id: str = Field(
-        default=...,
+        default="",
         description="Yandex Translate folder ID",
     )
 
@@ -83,9 +89,9 @@ class AppSettings(BaseSettings):
         default=None,
         description="Telegram bot token",
     )
-    tg_allowed_user_ids: List[int] = Field(
-        default_factory=list,
-        description="Allowed Telegram user IDs",
+    tg_allowed_user_ids: Optional[str] = Field(
+        default=None,
+        description="Allowed Telegram user IDs (comma-separated)",
     )
 
     # HH.ru
@@ -190,13 +196,76 @@ class AppSettings(BaseSettings):
         description="OpenTelemetry OTLP endpoint",
     )
 
-    @field_validator("tg_allowed_user_ids", mode="before")
-    @classmethod
-    def parse_allowed_user_ids(cls, v):
-        """Parse comma-separated user IDs."""
-        if isinstance(v, str):
-            return [int(x.strip()) for x in v.split(",") if x.strip()]
-        return v
+    # NLU
+    nlp_confidence_threshold: float = Field(
+        default=0.5,
+        description="Confidence threshold for intent detection",
+    )
+
+    # Orchestrator
+    orch_max_steps: int = Field(
+        default=6,
+        description="Maximum steps in action plan",
+    )
+    orch_time_budget_ms: int = Field(
+        default=800,
+        description="Time budget for orchestration in milliseconds",
+    )
+
+    # OCR
+    ocr_max_image_mb: int = Field(
+        default=5,
+        description="Maximum image size for OCR in MB",
+    )
+    ocr_rate_per_min: int = Field(
+        default=30,
+        description="OCR rate limit per minute",
+    )
+
+    # Translation
+    translate_default_lang: str = Field(
+        default="en",
+        description="Default target language for translation",
+    )
+
+    # Telegram
+    tg_webhook_url: Optional[str] = Field(
+        default=None,
+        description="Telegram webhook URL",
+    )
+
+    # HH.ru
+    hh_base_url: str = Field(
+        default="https://api.hh.ru",
+        description="HH.ru API base URL",
+    )
+    hh_default_area: int = Field(
+        default=1,
+        description="Default area ID for HH.ru search",
+    )
+
+    # LinkedIn
+    linkedin_mode: str = Field(
+        default="operator",
+        description="LinkedIn integration mode: official or operator",
+    )
+
+    # Scheduler
+    sched_max_retries: int = Field(
+        default=5,
+        description="Maximum retries for scheduled tasks",
+    )
+    sched_jitter_ms: int = Field(
+        default=250,
+        description="Jitter for scheduled tasks in milliseconds",
+    )
+
+    @property
+    def tg_allowed_user_ids_list(self) -> List[int]:
+        """Get parsed list of allowed user IDs."""
+        if self.tg_allowed_user_ids:
+            return [int(x.strip()) for x in self.tg_allowed_user_ids.split(",") if x.strip()]
+        return []
 
     @property
     def is_prod(self) -> bool:
@@ -209,9 +278,14 @@ class AppSettings(BaseSettings):
         return self.app_env.lower() == "dev"
 
     @property
-    def database_url(self) -> str:
-        """Get database URL from secret."""
-        return self.postgres_dsn.get_secret_value()
+    def db_dsn(self) -> str:
+        """Get database DSN, preferring Railway format."""
+        if self.database_url and self.database_url.get_secret_value():
+            return self.database_url.get_secret_value()
+        elif self.postgres_dsn and self.postgres_dsn.get_secret_value():
+            return self.postgres_dsn.get_secret_value()
+        else:
+            return "postgresql+psycopg://maga:password@localhost:5432/ai_maga"
 
     @property
     def yc_token(self) -> str:

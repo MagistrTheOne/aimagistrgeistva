@@ -1,0 +1,9 @@
+{
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "./docker/Dockerfile"
+  },
+  "deploy": {
+    "startCommand": "uvicorn app.api.http.app:app --host 0.0.0.0 --port $PORT --reload"
+  }
+}

@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # Main application for Railway
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+    environment:
+      # Railway provides these automatically
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - PORT=${PORT:-8000}
+
+      # Application settings
+      - APP_ENV=production
+      - LOG_LEVEL=INFO
+
+      # Yandex Cloud (set in Railway variables)
+      - YC_FOLDER_ID=${YC_FOLDER_ID}
+      - YC_OAUTH_TOKEN=${YC_OAUTH_TOKEN}
+
+      # Yandex GPT
+      - YANDEX_GPT_MODEL=yandexgpt/latest
+
+      # Telegram Bot (set in Railway variables)
+      - TG_BOT_TOKEN=${TG_BOT_TOKEN}
+
+      # Voice/Audio settings
+      - VOICE_PIPELINE_TIMEOUT=30
+      - VOICE_PIPELINE_BUFFER_SIZE=4096
+      - VOICE_PIPELINE_SAMPLE_RATE=16000
+
+      # LLM settings
+      - LLM_MAX_TOKENS=4096
+      - LLM_TEMPERATURE=0.7
+      - LLM_TIMEOUT=60
+
+      # HTTP Client
+      - HTTP_TIMEOUT=30
+      - HTTP_MAX_RETRIES=3
+      - HTTP_BACKOFF_FACTOR=2.0
+
+      # Rate Limiting
+      - RATE_LIMIT_REQUESTS_PER_MINUTE=60
+      - RATE_LIMIT_BURST_SIZE=10
+
+      # Metrics
+      - METRICS_PORT=9090
+
+      # NLU
+      - NLP_CONFIDENCE_THRESHOLD=0.5
+
+      # Orchestrator
+      - ORCH_MAX_STEPS=6
+      - ORCH_TIME_BUDGET_MS=800
+
+      # OCR
+      - OCR_MAX_IMAGE_MB=5
+      - OCR_RATE_PER_MIN=30
+
+      # Translation
+      - TRANSLATE_DEFAULT_LANG=en
+
+      # HH.ru
+      - HH_BASE_URL=https://api.hh.ru
+      - HH_DEFAULT_AREA=1
+
+      # Scheduler
+      - SCHED_MAX_RETRIES=5
+      - SCHED_JITTER_MS=250
+    restart: unless-stopped
+    command: sh -c "uvicorn app.api.http.app:app --host 0.0.0.0 --port ${PORT:-8000} --reload"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get(f'http://localhost:${PORT:-8000}/healthz')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

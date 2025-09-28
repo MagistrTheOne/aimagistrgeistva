@@ -1,11 +1,14 @@
 """Command orchestrator for AI Мага."""
 
 import asyncio
-from typing import Any, Dict, Optional
+import time
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
+from app.adapters.rate_limit import check_rate_limit
+from app.core.config import settings
 from app.core.di import get_logger, get_metrics
-from app.core.errors import AIError
+from app.core.errors import AIError, RateLimitError
 from app.domain.commands import CommandType, create_command
 from app.domain.events import publish_event
 from app.domain.models import (
@@ -15,9 +18,103 @@ from app.domain.models import (
     TranscriptionReady,
     VoiceHotwordDetected,
 )
+from app.domain.policies import AuthorizationPolicy
 from app.services.llm.yandex_gpt import yandex_gpt
 from app.services.voice.stt import stt
 from app.services.voice.tts import tts
+
+
+class ActionStep:
+    """Шаг в плане действий."""
+
+    def __init__(
+        self,
+        step_id: str,
+        action: str,
+        service: str,
+        params: Dict[str, Any],
+        timeout_ms: int = 5000,
+        required: bool = True,
+    ):
+        self.step_id = step_id
+        self.action = action
+        self.service = service
+        self.params = params
+        self.timeout_ms = timeout_ms
+        self.required = required
+        self.status = "pending"  # pending, running, completed, failed
+        self.result: Optional[Any] = None
+        self.error: Optional[str] = None
+        self.start_time: Optional[float] = None
+        self.end_time: Optional[float] = None
+
+
+class ActionPlan:
+    """План выполнения действий."""
+
+    def __init__(self, plan_id: str, intent: str, user_id: str, time_budget_ms: int):
+        self.plan_id = plan_id
+        self.intent = intent
+        self.user_id = user_id
+        self.time_budget_ms = time_budget_ms
+        self.steps: List[ActionStep] = []
+        self.status = "planning"  # planning, executing, completed, failed, timeout
+        self.created_at = time.time()
+        self.completed_at: Optional[float] = None
+        self.total_time_ms: float = 0.0
+        self.results: Dict[str, Any] = {}
+
+    def add_step(self, step: ActionStep):
+        """Добавить шаг в план."""
+        self.steps.append(step)
+
+    def get_next_step(self) -> Optional[ActionStep]:
+        """Получить следующий шаг для выполнения."""
+        for step in self.steps:
+            if step.status == "pending":
+                return step
+        return None
+
+    def mark_step_completed(self, step_id: str, result: Any = None):
+        """Отметить шаг как выполненный."""
+        for step in self.steps:
+            if step.step_id == step_id:
+                step.status = "completed"
+                step.result = result
+                step.end_time = time.time()
+                if step.start_time:
+                    step_duration = (step.end_time - step.start_time) * 1000
+                    self.total_time_ms += step_duration
+                break
+
+    def mark_step_failed(self, step_id: str, error: str):
+        """Отметить шаг как проваленный."""
+        for step in self.steps:
+            if step.step_id == step_id:
+                step.status = "failed"
+                step.error = error
+                step.end_time = time.time()
+                if step.start_time:
+                    step_duration = (step.end_time - step.start_time) * 1000
+                    self.total_time_ms += step_duration
+                break
+
+    def is_completed(self) -> bool:
+        """Проверить, завершен ли план."""
+        return all(step.status in ["completed", "failed"] for step in self.steps)
+
+    def has_failed_required_step(self) -> bool:
+        """Проверить, есть ли проваленные обязательные шаги."""
+        return any(
+            step.status == "failed" and step.required
+            for step in self.steps
+        )
+
+    def get_execution_time_ms(self) -> float:
+        """Получить время выполнения плана."""
+        if self.completed_at:
+            return (self.completed_at - self.created_at) * 1000
+        return (time.time() - self.created_at) * 1000
 
 
 class CommandOrchestrator:
@@ -27,6 +124,238 @@ class CommandOrchestrator:
         self.logger = get_logger()
         self.metrics = get_metrics()
         self.active_commands: Dict[UUID, asyncio.Task] = {}
+        self.active_plans: Dict[str, ActionPlan] = {}
+
+    def _create_action_plan(self, intent_result, user_id: str) -> ActionPlan:
+        """Создать план действий на основе распознанного интента."""
+        from app.services.nlp_nlu import IntentType
+
+        plan_id = f"plan_{int(time.time())}_{user_id}"
+        plan = ActionPlan(
+            plan_id=plan_id,
+            intent=intent_result.intent.value,
+            user_id=user_id,
+            time_budget_ms=settings.orch_time_budget_ms,
+        )
+
+        # Создаем шаги на основе интента
+        if intent_result.intent == IntentType.CHAT_ANSWER:
+            plan.add_step(ActionStep(
+                step_id="chat_1",
+                action="generate_response",
+                service="llm",
+                params={"text": intent_result.slots.get("query", intent_result.raw_text)},
+                timeout_ms=10000,
+            ))
+
+        elif intent_result.intent == IntentType.HH_SEARCH:
+            plan.add_step(ActionStep(
+                step_id="hh_search_1",
+                action="search_jobs",
+                service="hh_api",
+                params={
+                    "query": intent_result.slots.get("query", ""),
+                    "location": intent_result.slots.get("location"),
+                    "seniority": intent_result.slots.get("seniority"),
+                    "salary_min": intent_result.slots.get("salary_min"),
+                    "salary_max": intent_result.slots.get("salary_max"),
+                },
+                timeout_ms=8000,
+            ))
+
+        elif intent_result.intent == IntentType.OCR_TRANSLATE:
+            plan.add_step(ActionStep(
+                step_id="ocr_1",
+                action="take_screenshot",
+                service="vision",
+                params={},
+                timeout_ms=3000,
+            ))
+            plan.add_step(ActionStep(
+                step_id="ocr_2",
+                action="ocr_text",
+                service="vision",
+                params={"image_source": "screenshot"},
+                timeout_ms=5000,
+            ))
+            plan.add_step(ActionStep(
+                step_id="translate_1",
+                action="translate_text",
+                service="translation",
+                params={
+                    "target_lang": intent_result.slots.get("lang", settings.translate_default_lang)
+                },
+                timeout_ms=3000,
+            ))
+
+        elif intent_result.intent == IntentType.REMIND:
+            plan.add_step(ActionStep(
+                step_id="remind_1",
+                action="create_reminder",
+                service="scheduler",
+                params={
+                    "title": intent_result.slots.get("query", "Напоминание"),
+                    "when": intent_result.slots.get("when"),
+                    "duration": intent_result.slots.get("duration"),
+                },
+                timeout_ms=2000,
+            ))
+
+        elif intent_result.intent == IntentType.TAKE_SCREENSHOT:
+            plan.add_step(ActionStep(
+                step_id="screenshot_1",
+                action="take_screenshot",
+                service="vision",
+                params={},
+                timeout_ms=3000,
+            ))
+
+        elif intent_result.intent == IntentType.READ_ALOUD:
+            plan.add_step(ActionStep(
+                step_id="tts_1",
+                action="synthesize_speech",
+                service="tts",
+                params={
+                    "text": intent_result.slots.get("query", intent_result.raw_text),
+                    "lang": intent_result.slots.get("lang", "ru"),
+                },
+                timeout_ms=5000,
+            ))
+
+        # Ограничение количества шагов
+        if len(plan.steps) > settings.orch_max_steps:
+            plan.steps = plan.steps[:settings.orch_max_steps]
+
+        return plan
+
+    async def _execute_action_plan(self, plan: ActionPlan) -> Dict[str, Any]:
+        """Выполнить план действий."""
+        plan.status = "executing"
+        start_time = time.time()
+
+        try:
+            while not plan.is_completed():
+                # Проверка таймаута
+                if plan.get_execution_time_ms() > plan.time_budget_ms:
+                    plan.status = "timeout"
+                    break
+
+                step = plan.get_next_step()
+                if not step:
+                    break
+
+                # Выполнение шага
+                step.start_time = time.time()
+                step.status = "running"
+
+                try:
+                    result = await self._execute_step(step)
+                    plan.mark_step_completed(step.step_id, result)
+                    plan.results[step.step_id] = result
+
+                except Exception as e:
+                    error_msg = f"Step {step.step_id} failed: {str(e)}"
+                    self.logger.error(error_msg)
+                    plan.mark_step_failed(step.step_id, error_msg)
+
+                    # Если обязательный шаг провалился, останавливаем план
+                    if step.required:
+                        plan.status = "failed"
+                        break
+
+            # Финализация плана
+            plan.completed_at = time.time()
+            plan.status = "completed" if not plan.has_failed_required_step() else "failed"
+
+            return {
+                "plan_id": plan.plan_id,
+                "status": plan.status,
+                "execution_time_ms": plan.get_execution_time_ms(),
+                "steps_completed": len([s for s in plan.steps if s.status == "completed"]),
+                "steps_failed": len([s for s in plan.steps if s.status == "failed"]),
+                "results": plan.results,
+            }
+
+        except Exception as e:
+            plan.status = "failed"
+            plan.completed_at = time.time()
+            raise e
+
+    async def _execute_step(self, step: ActionStep) -> Any:
+        """Выполнить отдельный шаг плана."""
+        self.logger.info(f"Executing step {step.step_id}: {step.action}")
+
+        if step.service == "llm":
+            if step.action == "generate_response":
+                return await yandex_gpt.chat(step.params["text"])
+
+        elif step.service == "vision":
+            if step.action == "take_screenshot":
+                # TODO: Implement screenshot functionality
+                return {"screenshot_id": "mock_screenshot"}
+            elif step.action == "ocr_text":
+                # TODO: Implement OCR functionality
+                return {"text": "Mock OCR text"}
+
+        elif step.service == "translation":
+            if step.action == "translate_text":
+                # TODO: Implement translation
+                return {
+                    "original_text": step.params.get("text", ""),
+                    "translated_text": f"Translated: {step.params.get('text', '')}",
+                    "target_lang": step.params.get("target_lang", "en")
+                }
+
+        elif step.service == "tts":
+            if step.action == "synthesize_speech":
+                return await tts.synthesize(
+                    text=step.params["text"],
+                    language=step.params.get("lang", "ru")
+                )
+
+        elif step.service == "scheduler":
+            if step.action == "create_reminder":
+                # TODO: Implement reminder creation
+                return {"reminder_id": "mock_reminder"}
+
+        elif step.service == "hh_api":
+            if step.action == "search_jobs":
+                # TODO: Implement HH.ru search
+                return {"jobs": [], "total": 0}
+
+        # Unknown service/action
+        raise ValueError(f"Unknown service/action: {step.service}/{step.action}")
+
+    async def orchestrate_intent(self, intent_result, user_id: str) -> Dict[str, Any]:
+        """Оркестрировать выполнение интента через Action Plan."""
+        try:
+            # Проверка авторизации
+            if not AuthorizationPolicy.can_execute_command(UUID(user_id), None):
+                raise AIError("Unauthorized access", "AUTHZ_ERROR", 403)
+
+            # Проверка rate limit
+            await check_rate_limit(user_id, None)  # TODO: Add intent-based rate limiting
+
+            # Создание плана
+            plan = self._create_action_plan(intent_result, user_id)
+            self.active_plans[plan.plan_id] = plan
+
+            # Выполнение плана
+            result = await self._execute_action_plan(plan)
+
+            # Метрики
+            self.metrics.increment("orchestrator_plans_total", status=result["status"])
+            self.metrics.histogram("orchestrator_plan_duration", result["execution_time_ms"])
+
+            return result
+
+        except RateLimitError:
+            self.metrics.increment("orchestrator_rate_limited_total")
+            raise
+        except Exception as e:
+            self.logger.error(f"Orchestration failed: {e}")
+            self.metrics.increment("orchestrator_errors_total")
+            raise
 
     async def handle_voice_input(
         self,
@@ -35,7 +364,7 @@ class CommandOrchestrator:
         user_id: UUID,
     ) -> Optional[str]:
         """
-        Handle voice input: STT -> Intent Detection -> Command Execution.
+        Handle voice input: STT -> Intent Detection -> Orchestration.
 
         Args:
             audio_data: Raw audio data
@@ -45,6 +374,8 @@ class CommandOrchestrator:
         Returns:
             Response text to speak back
         """
+        from app.services.nlp_nlu import Utterance, nlu_processor
+
         try:
             # Step 1: Speech-to-Text
             self.logger.info("Starting STT processing", session_id=str(session_id))
@@ -71,61 +402,55 @@ class CommandOrchestrator:
             if not transcription or confidence < 0.5:
                 return "Не расслышал. Повтори, пожалуйста."
 
-            # Step 2: Intent Detection
-            intents = [
-                "chat_message",
-                "search_jobs",
-                "create_reminder",
-                "translate_text",
-                "read_text",
-                "generate_response",
-            ]
+            # Step 2: Intent Detection using NLU processor
+            utterance = Utterance(
+                text=transcription,
+                source="voice",
+                language="ru",
+                timestamp=time.time(),
+                user_id=str(user_id),
+            )
 
-            intent_result = await yandex_gpt.classify_intent(transcription, intents)
-
-            intent = intent_result["intent"]
-            intent_confidence = intent_result["confidence"]
+            intent_result = await nlu_processor.detect_intent(utterance)
 
             self.logger.info(
                 "Intent detected",
                 session_id=str(session_id),
-                intent=intent,
-                confidence=intent_confidence,
+                intent=intent_result.intent.value,
+                confidence=intent_result.confidence,
+                slots=intent_result.slots,
             )
 
             # Publish intent event
             await publish_event(IntentDetected(
                 aggregate_id=session_id,
-                intent=intent,
-                slots={},  # TODO: extract slots
-                confidence=intent_confidence,
+                intent=intent_result.intent.value,
+                slots=intent_result.slots,
+                confidence=intent_result.confidence,
             ))
 
-            if intent_confidence < 0.3:
+            if intent_result.confidence < settings.nlp_confidence_threshold:
                 return "Не понял намерение. Уточни, пожалуйста."
 
-            # Step 3: Execute Command
-            command_type = CommandType(intent)
-            command = create_command(command_type, user_id=user_id, session_id=session_id)
+            # Step 3: Orchestrate through Action Plan
+            plan_result = await self.orchestrate_intent(intent_result, str(user_id))
 
-            # Add command-specific parameters
-            if command_type == CommandType.CHAT_MESSAGE:
-                command.payload["text"] = transcription
-            elif command_type == CommandType.SEARCH_JOBS:
-                command.payload["query"] = transcription
-            # TODO: Add more command parameter extraction
+            # Extract final response
+            if plan_result["status"] == "completed":
+                # Get the final result from the last step
+                results = plan_result["results"]
+                if results:
+                    last_step_result = list(results.values())[-1]
+                    if isinstance(last_step_result, str):
+                        return last_step_result
+                    elif isinstance(last_step_result, dict) and "translated_text" in last_step_result:
+                        return last_step_result["translated_text"]
+                    elif isinstance(last_step_result, dict) and "text" in last_step_result:
+                        return last_step_result["text"]
 
-            response = await self.execute_command(command)
-
-            # Publish completion event
-            await publish_event(ActionCompleted(
-                aggregate_id=command.id,
-                action_id=command.id,
-                status="completed",
-                result={"response": response},
-            ))
-
-            return response
+                return "Задача выполнена успешно."
+            else:
+                return f"Не удалось выполнить задачу. Статус: {plan_result['status']}"
 
         except Exception as e:
             self.logger.error(
@@ -133,6 +458,7 @@ class CommandOrchestrator:
                 session_id=str(session_id),
                 error=str(e),
             )
+            self.metrics.increment("voice_processing_errors_total")
             return "Произошла ошибка при обработке голоса."
 
     async def execute_command(self, command: Command) -> str:

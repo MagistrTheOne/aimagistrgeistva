@@ -35,6 +35,79 @@ class EventBus:
             await self.publish(event)
 
 
+# Additional event types for Iteration 2
+class ActionStarted(DomainEvent):
+    """Event when action execution starts."""
+
+    event_type: str = "action.started"
+    action_id: str
+    plan_id: str
+    action_type: str
+    started_at: float
+
+
+class ActionFailed(DomainEvent):
+    """Event when action execution fails."""
+
+    event_type: str = "action.failed"
+    action_id: str
+    plan_id: str
+    action_type: str
+    error: str
+    failed_at: float
+
+
+class PlanCreated(DomainEvent):
+    """Event when orchestration plan is created."""
+
+    event_type: str = "plan.created"
+    plan_id: str
+    intent: str
+    user_id: str
+    step_count: int
+
+
+class PlanCompleted(DomainEvent):
+    """Event when orchestration plan is completed."""
+
+    event_type: str = "plan.completed"
+    plan_id: str
+    status: str
+    execution_time_ms: float
+    step_results: Dict[str, Any]
+
+
+class RateLimitExceeded(DomainEvent):
+    """Event when rate limit is exceeded."""
+
+    event_type: str = "rate_limit.exceeded"
+    user_id: str
+    action: str
+    limit: int
+    window_seconds: int
+
+
+class UserMessageReceived(DomainEvent):
+    """Event when user message is received."""
+
+    event_type: str = "user.message.received"
+    user_id: str
+    message_id: str
+    source: str
+    content_type: str
+    content_length: int
+
+
+class TelegramCommandReceived(DomainEvent):
+    """Event when Telegram command is received."""
+
+    event_type: str = "telegram.command.received"
+    user_id: str
+    command: str
+    args: List[str]
+    message_id: str
+
+
 # Global event bus instance
 event_bus = EventBus()
 

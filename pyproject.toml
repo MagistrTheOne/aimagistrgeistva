@@ -27,7 +27,6 @@ dependencies = [
     "pydantic-settings>=2.0.0",
 
     # Async
-    "asyncio-compat>=0.1.0",
     "uvloop>=0.17.0; sys_platform != 'win32'",
 
     # HTTP

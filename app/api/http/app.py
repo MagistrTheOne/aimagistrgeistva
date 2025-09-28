@@ -1,11 +1,12 @@
 """FastAPI HTTP API for AI Мага."""
 
 import asyncio
+import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -15,6 +16,11 @@ from app.core.errors import handle_error
 from app.core.logging import configure_logging
 from app.core.metrics import get_health_status, metrics
 from app.services.llm.yandex_gpt import yandex_gpt
+from app.services.nlp_nlu import IntentResult, Utterance, nlu_processor
+
+# Initialize DI container early to make services available for imports
+init_container()
+
 from app.services.orchestrator import orchestrator
 
 
@@ -40,12 +46,55 @@ class VoiceControlRequest(BaseModel):
     action: str = Field(..., description="Action: enable or disable")
 
 
+class IntentDetectRequest(BaseModel):
+    """Intent detection request model."""
+
+    text: str = Field(..., description="Text to analyze")
+    source: str = Field(default="api", description="Source of the text")
+    language: Optional[str] = Field(default=None, description="Language code")
+    user_id: Optional[str] = Field(default=None, description="User ID")
+
+
+class IntentDetectResponse(BaseModel):
+    """Intent detection response model."""
+
+    intent: str = Field(..., description="Detected intent type")
+    confidence: float = Field(..., description="Confidence score")
+    slots: Dict[str, Any] = Field(default_factory=dict, description="Extracted slots")
+    explanation: Optional[str] = Field(default=None, description="Explanation")
+
+
+class OrchestrateRequest(BaseModel):
+    """Orchestration request model."""
+
+    intent: str = Field(..., description="Intent type")
+    slots: Dict[str, Any] = Field(default_factory=dict, description="Intent slots")
+    user_id: str = Field(..., description="User ID")
+    session_id: Optional[str] = Field(default=None, description="Session ID")
+
+
+class OrchestrateResponse(BaseModel):
+    """Orchestration response model."""
+
+    plan_id: str = Field(..., description="Plan ID")
+    status: str = Field(..., description="Execution status")
+    execution_time_ms: float = Field(..., description="Execution time")
+    results: Dict[str, Any] = Field(default_factory=dict, description="Execution results")
+
+
+class TelegramWebhookRequest(BaseModel):
+    """Telegram webhook request model."""
+
+    update_id: int
+    message: Optional[Dict[str, Any]] = None
+    callback_query: Optional[Dict[str, Any]] = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # Startup
     configure_logging()
-    init_container()
 
     # Start metrics server
     asyncio.create_task(metrics.start_server())
@@ -64,10 +113,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add CORS middleware
+from fastapi.middleware.cors import CORSMiddleware
+
+# Добавление CORS middleware для поддержки кросс-доменных запросов.
+# В продакшене рекомендуется явно указывать допустимые источники.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: Configure properly for production
+    allow_origins=["*"],  # Разрешить все источники (для разработки)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -179,9 +231,9 @@ async def ocr_text(
 
 @app.post("/v1/translate", summary="Translate text", tags=["Translation"])
 async def translate_text(
-    text: str = Field(..., description="Text to translate"),
-    target_lang: str = Field("en", description="Target language"),
-    source_lang: Optional[str] = Field(None, description="Source language"),
+    text: str = Query(..., description="Text to translate"),
+    target_lang: str = Query("en", description="Target language"),
+    source_lang: Optional[str] = Query(None, description="Source language"),
 ) -> Dict[str, str]:
     """
     Translate text using Yandex Translate.
@@ -194,6 +246,83 @@ async def translate_text(
         "translated_text": f"Translated: {text}",
         "target_lang": target_lang,
     }
+
+
+@app.post("/v1/intent/detect", summary="Detect intent", tags=["NLU"])
+async def detect_intent(request: IntentDetectRequest) -> IntentDetectResponse:
+    """
+    Detect user intent from text using NLU.
+
+    Returns intent type, confidence, and extracted slots.
+    """
+    try:
+        utterance = Utterance(
+            text=request.text,
+            source=request.source,
+            language=request.language,
+            timestamp=time.time(),
+            user_id=request.user_id,
+        )
+
+        intent_result = await nlu_processor.detect_intent(utterance)
+
+        return IntentDetectResponse(
+            intent=intent_result.intent.value,
+            confidence=intent_result.confidence,
+            slots=intent_result.slots,
+            explanation=intent_result.explanation,
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/v1/orchestrate", summary="Orchestrate intent execution", tags=["Orchestration"])
+async def orchestrate_intent(request: OrchestrateRequest) -> OrchestrateResponse:
+    """
+    Execute intent through action plan orchestration.
+
+    Creates and executes a plan of actions based on detected intent.
+    """
+    try:
+        from app.services.nlp_nlu import IntentResult, IntentType
+
+        # Create intent result from request
+        intent_result = IntentResult(
+            intent=IntentType(request.intent),
+            confidence=1.0,  # API requests are considered high confidence
+            slots=request.slots,
+            raw_text="",  # Not available in this API
+        )
+
+        result = await orchestrator.orchestrate_intent(intent_result, request.user_id)
+
+        return OrchestrateResponse(
+            plan_id=result["plan_id"],
+            status=result["status"],
+            execution_time_ms=result["execution_time_ms"],
+            results=result["results"],
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/v1/telegram/webhook", summary="Telegram webhook", tags=["Telegram"])
+async def telegram_webhook(request: TelegramWebhookRequest) -> Dict[str, str]:
+    """
+    Handle Telegram webhook updates.
+
+    Processes messages, commands, and callbacks from Telegram bot.
+    """
+    try:
+        # TODO: Implement Telegram webhook processing
+        # This would integrate with aiogram or custom Telegram handling
+
+        return {"status": "ok"}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/v1/status", summary="System status", tags=["Status"])

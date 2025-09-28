@@ -34,15 +34,12 @@ RUN useradd --create-home --shell /bin/bash app
 # Set work directory
 WORKDIR /app
 
-# Copy requirements first for better caching
-COPY pyproject.toml ./
+# Copy source code first
+COPY . .
 
 # Install Python dependencies
 RUN pip install --upgrade pip && \
-    pip install -e .[dev]
-
-# Copy source code
-COPY . .
+    pip install -e .
 
 # Create necessary directories
 RUN mkdir -p /app/logs /app/data /app/audio_cache && \
@@ -58,5 +55,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # Expose port
 EXPOSE 8000
 
-# Default command
-CMD ["uvicorn", "app.api.http.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Default command - Railway provides PORT variable
+CMD ["sh", "-c", "uvicorn app.api.http.app:app --host 0.0.0.0 --port ${PORT:-8000} --reload"]

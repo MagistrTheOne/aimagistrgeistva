@@ -31,17 +31,43 @@ class CommandStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class UserProfile(BaseModel):
-    """User profile model."""
+class User(BaseModel):
+    """User model for authentication and preferences."""
 
     id: UUID = Field(default_factory=uuid4)
     telegram_id: Optional[int] = None
     name: Optional[str] = None
-    language: str = "ru"
-    timezone: str = "Europe/Moscow"
+    language: str = Field(default="ru")
+    timezone: str = Field(default="Europe/Moscow")
     preferences: Dict[str, Any] = Field(default_factory=dict)
+    roles: List[str] = Field(default_factory=lambda: ["user"])
+    is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    last_seen: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Backward compatibility
+UserProfile = User
+
+
+class Message(BaseModel):
+    """Message model for storing user communications."""
+
+    id: UUID = Field(default_factory=uuid4)
+    user_id: UUID
+    session_id: Optional[UUID] = None
+    source: str  # "voice", "telegram", "http", "api"
+    channel: Optional[str] = None  # "telegram", "voice", etc.
+    content_type: str = Field(default="text")  # "text", "audio", "image", "file"
+    content: str  # Text content or path to file
+    metadata: Dict[str, Any] = Field(default_factory=dict)  # Audio duration, file size, etc.
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    processed: bool = Field(default=False)
+    intent_id: Optional[UUID] = None  # Link to detected intent
 
     class Config:
         from_attributes = True
@@ -54,6 +80,51 @@ class ConversationContext(BaseModel):
     user_id: UUID
     messages: List[Dict[str, Any]] = Field(default_factory=list)
     context_data: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        from_attributes = True
+
+
+class Intent(BaseModel):
+    """Intent detection result model."""
+
+    id: UUID = Field(default_factory=uuid4)
+    user_id: UUID
+    session_id: Optional[UUID] = None
+    message_id: Optional[UUID] = None  # Link to source message
+    intent_type: str  # IntentType enum value
+    confidence: float = Field(ge=0.0, le=1.0)
+    slots: Dict[str, Any] = Field(default_factory=dict)  # Extracted slots
+    raw_text: str
+    source: str  # "voice", "telegram", "http"
+    language: Optional[str] = None
+    explanation: Optional[str] = None
+    processed: bool = Field(default=False)
+    plan_id: Optional[str] = None  # Link to orchestration plan
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        from_attributes = True
+
+
+class Task(BaseModel):
+    """Task/scheduled job model."""
+
+    id: UUID = Field(default_factory=uuid4)
+    user_id: UUID
+    type: str  # "reminder", "digest", "followup", etc.
+    title: str
+    description: Optional[str] = None
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    status: str = Field(default="pending")  # "pending", "running", "completed", "failed", "cancelled"
+    priority: int = Field(default=1, ge=1, le=5)
+    cron_spec: Optional[str] = None  # Cron expression for recurring tasks
+    next_run: Optional[datetime] = None
+    last_run: Optional[datetime] = None
+    retry_count: int = Field(default=0)
+    max_retries: int = Field(default=3)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

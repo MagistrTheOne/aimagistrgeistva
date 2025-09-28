@@ -79,7 +79,19 @@ class YandexGPT:
             full_messages = [{"role": "system", "content": system_prompt}]
             full_messages.extend(messages)
 
-            # Prepare request data
+            # Prepare request data for Yandex GPT
+            # Convert messages to prompt format
+            prompt_parts = []
+            for msg in full_messages:
+                if msg["role"] == "system":
+                    prompt_parts.append(f"System: {msg['content']}")
+                elif msg["role"] == "user":
+                    prompt_parts.append(f"User: {msg['content']}")
+                elif msg["role"] == "assistant":
+                    prompt_parts.append(f"Assistant: {msg['content']}")
+
+            prompt = "\n\n".join(prompt_parts)
+
             data = {
                 "modelUri": f"gpt://{settings.yc_folder_id}/{model or settings.yandex_gpt_model}",
                 "completionOptions": {
@@ -87,8 +99,14 @@ class YandexGPT:
                     "temperature": temperature or settings.llm_temperature,
                     "maxTokens": max_tokens or settings.llm_max_tokens,
                 },
-                "messages": full_messages,
+                "messages": [
+                    {
+                        "role": "user",
+                        "text": prompt
+                    }
+                ]
             }
+
 
             headers = {
                 "Authorization": f"Bearer {token}",
@@ -102,6 +120,7 @@ class YandexGPT:
                 headers=headers,
                 timeout=settings.llm_timeout,
             )
+
 
             # Parse response
             result = self._parse_response(response_data)
@@ -126,7 +145,7 @@ class YandexGPT:
 
             # Get first alternative
             alternative = result["alternatives"][0]
-            text = alternative.get("message", {}).get("content", "")
+            text = alternative.get("message", {}).get("text", "")
 
             # Extract usage info if available
             usage = result.get("usage", {})

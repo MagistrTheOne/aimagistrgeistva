@@ -66,8 +66,21 @@ jobs:
         REDIS_URL: redis://localhost:6379/0
         YANDEX_OAUTH_TOKEN: ${{ secrets.YANDEX_OAUTH_TOKEN }}
         YC_FOLDER_ID: ${{ secrets.YC_FOLDER_ID }}
+        NLP_CONFIDENCE_THRESHOLD: 0.5
+        ORCH_MAX_STEPS: 6
+        ORCH_TIME_BUDGET_MS: 800
       run: |
         pytest --cov=app --cov-report=xml --cov-report=term-missing
+
+    - name: Run load tests (basic)
+      env:
+        APP_ENV: test
+        POSTGRES_DSN: postgresql+psycopg://maga:password@localhost:5432/ai_maga_test
+        REDIS_URL: redis://localhost:6379/0
+        YANDEX_OAUTH_TOKEN: ${{ secrets.YANDEX_OAUTH_TOKEN }}
+        YC_FOLDER_ID: ${{ secrets.YC_FOLDER_ID }}
+      run: |
+        python scripts/load/nlu_telegram_load_test.py --users 5 --duration 10 --rate 2
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3

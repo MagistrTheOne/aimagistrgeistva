@@ -5,7 +5,6 @@ import sys
 from typing import Any, Dict
 
 import structlog
-from structlog.stdlib import LogFormatter
 
 from app.core.config import settings
 
@@ -75,7 +74,3 @@ class LoggerAdapter:
     def debug(self, message: str, **kwargs: Any) -> None:
         """Log debug message."""
         self._logger.debug(message, **kwargs)
-
-    def bind(self, **kwargs: Any) -> "LoggerAdapter":
-        """Bind additional context."""
-        return LoggerAdapter(self._logger.bind(**kwargs))
