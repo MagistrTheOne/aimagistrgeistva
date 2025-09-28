@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # Main application
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+      - "9090:9090"  # Metrics
+    volumes:
+      - ..:/app
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw  # For GUI applications if needed
+    environment:
+      - APP_ENV=dev
+      - LOG_LEVEL=INFO
+      - POSTGRES_DSN=postgresql+psycopg://maga:password@postgres:5432/ai_maga
+      - REDIS_URL=redis://redis:6379/0
+      - METRICS_PORT=9090
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - maga_network
+    restart: unless-stopped
+    command: uvicorn app.api.http.app:app --host 0.0.0.0 --port 8000 --reload --log-level info
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ai_maga
+      POSTGRES_USER: maga
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - maga_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maga -d ai_maga"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis cache/queue
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - maga_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Commander (optional - for debugging)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - maga_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  maga_network:
+    driver: bridge
