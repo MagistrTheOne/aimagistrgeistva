@@ -787,15 +787,15 @@ class TelegramService:
             raise ValueError(f"Invalid text: {text}")
         self._validate_message_id(message_id)
 
-        # Rate limiting
+        # Rate limiting - temporarily disabled for debugging
         user_id = str(chat_id)
-        self.logger.error("DEBUG: Checking rate limit", user_id=user_id)
-        if text.startswith('/'):
-            await check_rate_limit(user_id, CommandType.GENERATE_RESPONSE)
-        else:
-            await check_rate_limit(user_id, CommandType.CHAT_MESSAGE)
+        self.logger.error("DEBUG: Skipping rate limit check for debugging", user_id=user_id)
+        # if text.startswith('/'):
+        #     await check_rate_limit(user_id, CommandType.GENERATE_RESPONSE)
+        # else:
+        #     await check_rate_limit(user_id, CommandType.CHAT_MESSAGE)
 
-        self.logger.error("DEBUG: Rate limit passed, processing message")
+        self.logger.error("DEBUG: Processing message without rate limit")
         try:
             # Handle commands
             if text.startswith('/'):
