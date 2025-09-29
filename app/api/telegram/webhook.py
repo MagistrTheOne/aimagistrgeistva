@@ -23,6 +23,12 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
         # Get raw JSON data
         update_data = await request.json()
 
+        # Write to debug file
+        with open("/tmp/webhook_debug.log", "a") as f:
+            f.write(f"===== WEBHOOK RECEIVED =====\n")
+            f.write(f"Update data: {str(update_data)[:500]}\n")
+            f.write(f"Timestamp: {__import__('time').time()}\n\n")
+
         print(f"DEBUG: ===== WEBHOOK RECEIVED =====")
         print(f"DEBUG: Update data: {str(update_data)[:500]}")
 
@@ -62,9 +68,13 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
 
             # For testing - just log without processing
             if text == "/ping":
+                with open("/tmp/webhook_debug.log", "a") as f:
+                    f.write("===== RECEIVED /ping COMMAND =====\n")
                 print("DEBUG: ===== RECEIVED /ping COMMAND =====")
                 return {"status": "ping_received"}
             elif text == "/start":
+                with open("/tmp/webhook_debug.log", "a") as f:
+                    f.write("===== RECEIVED /start COMMAND =====\n")
                 print("DEBUG: ===== RECEIVED /start COMMAND =====")
                 return {"status": "start_received"}
 
@@ -139,3 +149,16 @@ async def _handle_callback_query(callback_query: Dict[str, Any]) -> Dict[str, An
 async def telegram_health() -> Dict[str, str]:
     """Health check endpoint for Telegram webhook."""
     return {"status": "ok", "service": "telegram-webhook"}
+
+
+@router.get("/debug")
+async def telegram_debug() -> Dict[str, Any]:
+    """Debug endpoint to read webhook logs."""
+    try:
+        with open("/tmp/webhook_debug.log", "r") as f:
+            content = f.read()
+        return {"debug_log": content[-2000:]}  # Last 2000 chars
+    except FileNotFoundError:
+        return {"debug_log": "No debug file found"}
+    except Exception as e:
+        return {"error": str(e)}
