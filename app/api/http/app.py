@@ -336,16 +336,16 @@ async def telegram_webhook(request: TelegramWebhookRequest) -> Dict[str, str]:
             # Silently ignore messages from unauthorized users
             return {"status": "ok"}
 
-        # Handle text messages
-        if "text" in message:
-            text = message["text"].strip()
+            # Handle text messages
+            if "text" in message:
+                text = message["text"].strip()
 
-            # Skip commands for now, process all text
-            if text:
-                # Process in background to avoid timeout
-                asyncio.create_task(
-                    telegram_service.process_text_message(chat_id, text, message_id)
-                )
+                # Process all text (commands are handled internally)
+                if text:
+                    # Process in background to avoid timeout
+                    asyncio.create_task(
+                        telegram_service.process_text_message(chat_id, text, message_id)
+                    )
 
         # Handle voice messages
         elif "voice" in message:
