@@ -65,6 +65,8 @@ class CommandHandler:
             await self._cmd_expense(chat_id, message_id, cmd_parts)
         elif cmd == "/expenses":
             await self._cmd_expenses(chat_id, message_id)
+        elif cmd == "/ping":
+            await self._cmd_ping(chat_id, message_id)
         else:
             await self.telegram_service.send_message(
                 chat_id=chat_id,
@@ -638,6 +640,14 @@ class CommandHandler:
                 text="❌ Не удалось загрузить расходы. Попробуйте позже.",
                 reply_to_message_id=message_id
             )
+
+    async def _cmd_ping(self, chat_id: int, message_id: int) -> None:
+        """Handle /ping command - simple test command."""
+        await self.telegram_service.send_message(
+            chat_id=chat_id,
+            text="🏓 Pong! Бот работает!",
+            reply_to_message_id=message_id
+        )
 
 
 class TelegramService:
