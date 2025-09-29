@@ -747,6 +747,19 @@ async def debug_env() -> Dict[str, Any]:
     }
 
 
+@app.get("/debug/webhook", summary="Webhook debug", tags=["Debug"])
+async def webhook_debug() -> Dict[str, Any]:
+    """Debug endpoint to read webhook logs."""
+    try:
+        with open("/tmp/webhook_debug.log", "r") as f:
+            content = f.read()
+        return {"debug_log": content[-2000:]}  # Last 2000 chars
+    except FileNotFoundError:
+        return {"debug_log": "No debug file found"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/v1/status", summary="System status", tags=["Status"])
 async def system_status() -> Dict[str, Any]:
     """Get detailed system status."""
