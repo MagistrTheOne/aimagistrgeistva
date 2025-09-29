@@ -71,19 +71,14 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
                 f.write(f"===== RECEIVED MESSAGE: {text} =====\n")
             print(f"DEBUG: ===== RECEIVED MESSAGE: {text} =====")
 
-            # Simple test response
+            # Simple test response - just return success for any message
             if text and len(text.strip()) > 0:
                 print(f"DEBUG: ===== MESSAGE PROCESSED SUCCESSFULLY =====")
                 return {"status": "message_processed"}
 
-            try:
-                print("DEBUG: Calling process_text_message...")
-                # Handle text messages (including commands)
-                await telegram_service.process_text_message(chat_id, text, message_id)
-                print("DEBUG: Text message processed successfully")
-            except Exception as e:
-                print(f"DEBUG: Error in process_text_message: {e}")
-                raise
+            # This should not be reached, but just in case
+            print("DEBUG: No text in message")
+            return {"status": "no_text"}
         elif voice:
             print("DEBUG: Processing voice message")
             # Handle voice messages
