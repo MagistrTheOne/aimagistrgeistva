@@ -736,6 +736,17 @@ async def get_notifications(user_id: str = Query(..., description="User ID")) ->
         raise HTTPException(status_code=500, detail="Failed to get notifications")
 
 
+@app.get("/debug/env", summary="Debug environment", tags=["Debug"])
+async def debug_env() -> Dict[str, Any]:
+    """Debug environment variables (for development only)."""
+    return {
+        "tg_bot_token_exists": settings.tg_bot_token is not None,
+        "tg_bot_token_value": settings.tg_bot_token.get_secret_value()[:10] + "..." if settings.tg_bot_token else None,
+        "automations_enabled": AUTOMATIONS_ENABLED,
+        "telegram_enabled": TELEGRAM_ENABLED,
+    }
+
+
 @app.get("/v1/status", summary="System status", tags=["Status"])
 async def system_status() -> Dict[str, Any]:
     """Get detailed system status."""
