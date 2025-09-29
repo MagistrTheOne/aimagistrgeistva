@@ -347,14 +347,27 @@ async def telegram_webhook(request: TelegramWebhookRequest) -> Dict[str, str]:
                         telegram_service.process_text_message(chat_id, text, message_id)
                     )
 
-        # Handle voice messages
-        elif "voice" in message:
-            voice_file_id = message.get("voice", {}).get("file_id")
-            if voice_file_id:
-                # Process in background to avoid timeout
-                asyncio.create_task(
-                    telegram_service.process_voice_message(chat_id, voice_file_id, message_id)
-                )
+            # Handle voice messages
+            elif "voice" in message:
+                voice_file_id = message.get("voice", {}).get("file_id")
+                if voice_file_id:
+                    # Process in background to avoid timeout
+                    asyncio.create_task(
+                        telegram_service.process_voice_message(chat_id, voice_file_id, message_id)
+                    )
+
+            # Handle callback queries (inline button presses)
+            elif "callback_query" in update:
+                callback_query = update["callback_query"]
+                callback_chat_id = callback_query.get("message", {}).get("chat", {}).get("id")
+                callback_data = callback_query.get("data", "")
+                callback_message_id = callback_query.get("message", {}).get("message_id")
+
+                if callback_data:
+                    # Process callback in background
+                    asyncio.create_task(
+                        telegram_service.process_callback_query(callback_chat_id, callback_data, callback_message_id)
+                    )
 
         return {"status": "ok"}
 
