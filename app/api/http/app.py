@@ -65,15 +65,7 @@ class VoiceControlRequest(BaseModel):
 
 # ===== AUTOMATION API MODELS =====
 
-# Temporarily commented out to fix import issues
-# class TaskCreateRequest(BaseModel):
-#     """Task creation request."""
-#
-#     title: str = Field(..., description="Task title")
-#     description: Optional[str] = None
-#     priority: int = Field(default=1, ge=1, le=5, description="Priority 1-5")
-#     due_date: Optional[str] = Field(None, description="Due date in ISO format")
-#     tags: List[str] = Field(default_factory=list, description="Task tags")
+# Temporarily removed to fix import issues
 
 
 class IntentDetectRequest(BaseModel):
