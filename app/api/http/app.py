@@ -18,6 +18,13 @@ from app.core.metrics import get_health_status, metrics
 from app.services.llm.yandex_gpt import yandex_gpt
 from app.services.nlp_nlu import IntentResult, Utterance, nlu_processor
 
+# Import Telegram router
+try:
+    from app.api.telegram import telegram_router
+    TELEGRAM_ENABLED = True
+except ImportError:
+    TELEGRAM_ENABLED = False
+
 # Initialize DI container early to make services available for imports
 init_container()
 
@@ -124,6 +131,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include Telegram webhook router if available
+if TELEGRAM_ENABLED:
+    app.include_router(telegram_router)
 
 
 @app.exception_handler(Exception)
