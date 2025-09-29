@@ -23,9 +23,13 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
         # Get raw JSON data
         update_data = await request.json()
 
+        print(f"DEBUG: Received webhook data: {update_data}")  # Debug print
+
         logger.info(
             "Received Telegram update",
-            update_type=update_data.get("message", {}).get("text", "unknown")
+            update_id=update_data.get("update_id"),
+            message_text=update_data.get("message", {}).get("text", "unknown"),
+            chat_id=update_data.get("message", {}).get("chat", {}).get("id")
         )
 
         # Extract message data
@@ -34,7 +38,9 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
             # Handle callback queries (button clicks)
             callback_query = update_data.get("callback_query", {})
             if callback_query:
+                print(f"DEBUG: Handling callback query: {callback_query}")  # Debug print
                 return await _handle_callback_query(callback_query)
+            print("DEBUG: No message or callback in update")  # Debug print
             return {"ok": True}
 
         # Extract message details
@@ -43,15 +49,24 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
         text = message.get("text")
         voice = message.get("voice")
 
+        print(f"DEBUG: Extracted - chat_id: {chat_id}, message_id: {message_id}, text: {text}")  # Debug print
+
         if not chat_id or not message_id:
             logger.warning("Invalid message format", update_data=update_data)
             return {"ok": True}
 
         # Handle different message types
         if text:
-            # Handle text messages (including commands)
-            await telegram_service.process_text_message(chat_id, text, message_id)
+            print(f"DEBUG: Processing text message: {text}")  # Debug print
+            try:
+                # Handle text messages (including commands)
+                await telegram_service.process_text_message(chat_id, text, message_id)
+                print("DEBUG: Text message processed successfully")  # Debug print
+            except Exception as e:
+                print(f"DEBUG: Error in process_text_message: {e}")  # Debug print
+                raise
         elif voice:
+            print(f"DEBUG: Processing voice message")  # Debug print
             # Handle voice messages
             voice_file_id = voice.get("file_id")
             if voice_file_id:
@@ -59,6 +74,7 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
             else:
                 logger.warning("Voice message without file_id", message=message)
         else:
+            print(f"DEBUG: Unknown message type, sending help")  # Debug print
             # Unknown message type - send help
             await telegram_service.send_message(
                 chat_id=chat_id,
@@ -69,6 +85,7 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
         return {"ok": True}
 
     except Exception as e:
+        print(f"DEBUG: Exception in webhook: {e}")  # Debug print
         logger.error(
             "Error processing Telegram webhook",
             error=str(e),

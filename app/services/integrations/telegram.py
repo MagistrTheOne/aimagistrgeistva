@@ -780,6 +780,8 @@ class TelegramService:
 
     async def process_text_message(self, chat_id: int, text: str, message_id: int) -> None:
         """Process text message and send response."""
+        print(f"DEBUG: process_text_message called with chat_id={chat_id}, text='{text}'")  # Debug print
+
         self._validate_chat_id(chat_id)
         if not isinstance(text, str) or not text.strip():
             raise ValueError(f"Invalid text: {text}")
@@ -787,11 +789,13 @@ class TelegramService:
 
         # Rate limiting
         user_id = str(chat_id)
+        print(f"DEBUG: Checking rate limit for user {user_id}")  # Debug print
         if text.startswith('/'):
             await check_rate_limit(user_id, CommandType.GENERATE_RESPONSE)
         else:
             await check_rate_limit(user_id, CommandType.CHAT_MESSAGE)
 
+        print(f"DEBUG: Rate limit passed, processing message")  # Debug print
         try:
             # Handle commands
             if text.startswith('/'):
@@ -903,6 +907,7 @@ class TelegramService:
 
     async def _handle_command(self, chat_id: int, command: str, message_id: int) -> None:
         """Handle bot commands."""
+        print(f"DEBUG: _handle_command called with command='{command}'")  # Debug print
         await self.command_handler.handle_command(chat_id, command, message_id)
 
 
