@@ -12,6 +12,7 @@ from app.core.di import init_container
 from app.core.logging import configure_logging
 from app.services.llm.yandex_gpt import yandex_gpt
 from app.services.voice.audio_io import audio_io
+from app.services.integrations.telegram import telegram_service
 
 console = Console()
 app = typer.Typer(
@@ -166,6 +167,67 @@ def config():
         table.add_row(key, str(value))
 
     console.print(table)
+
+
+@app.command()
+def telegram_setup(
+    webhook_url: str = typer.Option(None, help="Webhook URL for Railway deployment"),
+):
+    """Setup Telegram bot webhook."""
+    async def setup_async():
+        if not settings.tg_bot_token:
+            console.print("[red]Telegram bot token not configured![/red]")
+            return
+
+        # If no webhook URL provided, try to get Railway domain
+        if not webhook_url:
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["railway", "domain"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                if result.returncode == 0:
+                    railway_url = result.stdout.strip()
+                    webhook_url = f"{railway_url}/v1/telegram/webhook"
+                    console.print(f"[green]Using Railway URL: {webhook_url}[/green]")
+                else:
+                    console.print("[red]Could not get Railway domain. Please provide --webhook-url[/red]")
+                    return
+            except Exception as e:
+                console.print(f"[red]Error getting Railway domain: {e}[/red]")
+                console.print("[yellow]Please provide --webhook-url manually[/yellow]")
+                return
+
+        # Set webhook
+        import httpx
+        bot_token = settings.tg_bot_token.get_secret_value()
+        telegram_api_url = f"https://api.telegram.org/bot{bot_token}/setWebhook"
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    telegram_api_url,
+                    json={"url": webhook_url},
+                    timeout=30
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    if result.get("ok"):
+                        console.print("[green]✅ Telegram webhook successfully set![/green]")
+                        console.print(f"Webhook URL: {webhook_url}")
+                    else:
+                        console.print(f"[red]❌ Telegram API error: {result}[/red]")
+                else:
+                    console.print(f"[red]❌ HTTP error: {response.status_code}[/red]")
+
+        except Exception as e:
+            console.print(f"[red]❌ Error setting webhook: {e}[/red]")
+
+    asyncio.run(setup_async())
 
 
 @app.command()

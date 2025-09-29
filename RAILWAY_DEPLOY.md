@@ -155,7 +155,22 @@ railway logs
 railway variables
 ```
 
-### Шаг 9: Тестирование API
+### Шаг 9: Настройка Telegram Webhook
+
+После получения Railway URL настройте webhook для Telegram бота:
+
+```bash
+# Получите ваш Railway URL
+railway domain
+# Пример: https://ai-maga-production.up.railway.app
+
+# Установите webhook для Telegram бота
+curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://your-app-url.railway.app/v1/telegram/webhook"}'
+```
+
+### Шаг 10: Тестирование API
 
 ```bash
 # Health check
@@ -165,7 +180,21 @@ curl https://your-app-url.railway.app/healthz
 curl -X POST https://your-app-url.railway.app/v1/chat \
   -H "Content-Type: application/json" \
   -d '{"text": "Привет!", "session_id": "test"}'
+
+# System status
+curl https://your-app-url.railway.app/v1/status
 ```
+
+### Шаг 11: Тестирование Telegram бота
+
+1. Отправьте текстовое сообщение боту в Telegram
+2. Отправьте голосовое сообщение боту
+3. Бот должен ответить текстом и голосом
+
+**Ожидаемый сценарий:**
+- 📝 Вы пишете: "Привет"
+- 🤖 Бот отвечает текстом: "Привет! Как я могу помочь?"
+- 🔊 Бот отправляет голосовое сообщение с тем же текстом
 
 ## 🔧 Устранение проблем
 
