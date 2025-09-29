@@ -422,11 +422,17 @@ async def telegram_webhook(request: TelegramWebhookRequest) -> Dict[str, str]:
 async def debug_env() -> Dict[str, Any]:
     """Debug environment variables (for development only)."""
     return {
+        "status": "debug_endpoint_working",
         "tg_bot_token_exists": settings.tg_bot_token is not None,
-        "tg_bot_token_value": settings.tg_bot_token.get_secret_value()[:10] + "..." if settings.tg_bot_token else None,
         "automations_enabled": AUTOMATIONS_ENABLED,
         "telegram_enabled": TELEGRAM_ENABLED,
     }
+
+
+@app.get("/test", summary="Test endpoint", tags=["Test"])
+async def test_endpoint() -> Dict[str, str]:
+    """Simple test endpoint."""
+    return {"status": "test_endpoint_working"}
 
 
 @app.get("/debug/webhook", summary="Webhook debug", tags=["Debug"])
