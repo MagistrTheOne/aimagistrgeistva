@@ -23,10 +23,8 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
         # Get raw JSON data
         update_data = await request.json()
 
-        logger.error(
-            "DEBUG: Received webhook data",
-            update_data=str(update_data)[:500]  # Limit log size
-        )
+        print(f"DEBUG: ===== WEBHOOK RECEIVED =====")
+        print(f"DEBUG: Update data: {str(update_data)[:500]}")
 
         logger.info(
             "Received Telegram update",
@@ -41,9 +39,9 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
             # Handle callback queries (button clicks)
             callback_query = update_data.get("callback_query", {})
             if callback_query:
-                logger.error("DEBUG: Handling callback query", callback_data=str(callback_query)[:200])
+                print(f"DEBUG: Handling callback query: {str(callback_query)[:200]}")
             return await _handle_callback_query(callback_query)
-            logger.error("DEBUG: No message or callback in update")
+            print("DEBUG: No message or callback in update")
             return {"ok": True}
 
         # Extract message details
@@ -52,42 +50,42 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
         text = message.get("text")
         voice = message.get("voice")
 
-        logger.error("DEBUG: Extracted data", chat_id=chat_id, message_id=message_id, text=text[:100])
+        print(f"DEBUG: Extracted data - chat_id: {chat_id}, message_id: {message_id}, text: {text[:100]}")
 
         if not chat_id or not message_id:
-            logger.warning("Invalid message format", update_data=update_data)
+            print(f"DEBUG: Invalid message format")
             return {"ok": True}
 
         # Handle different message types
         if text:
-            logger.error("DEBUG: Processing text message", text=text[:100])
+            print(f"DEBUG: Processing text message: {text[:100]}")
 
             # For testing - just log without processing
             if text == "/ping":
-                logger.error("DEBUG: Received /ping command - would respond with Pong!")
-                # Don't actually send message to avoid recursion in test
+                print("DEBUG: ===== RECEIVED /ping COMMAND =====")
                 return {"status": "ping_received"}
             elif text == "/start":
-                logger.error("DEBUG: Received /start command - would send welcome!")
+                print("DEBUG: ===== RECEIVED /start COMMAND =====")
                 return {"status": "start_received"}
 
             try:
+                print("DEBUG: Calling process_text_message...")
                 # Handle text messages (including commands)
                 await telegram_service.process_text_message(chat_id, text, message_id)
-                logger.error("DEBUG: Text message processed successfully")
+                print("DEBUG: Text message processed successfully")
             except Exception as e:
-                logger.error("DEBUG: Error in process_text_message", error=str(e))
+                print(f"DEBUG: Error in process_text_message: {e}")
                 raise
         elif voice:
-            logger.error("DEBUG: Processing voice message")
+            print("DEBUG: Processing voice message")
             # Handle voice messages
             voice_file_id = voice.get("file_id")
             if voice_file_id:
                 await telegram_service.process_voice_message(chat_id, voice_file_id, message_id)
             else:
-                logger.warning("Voice message without file_id", message=message)
+                print("DEBUG: Voice message without file_id")
         else:
-            logger.error("DEBUG: Unknown message type, sending help")
+            print("DEBUG: Unknown message type, sending help")
             # Unknown message type - send help
             await telegram_service.send_message(
                 chat_id=chat_id,
@@ -98,7 +96,7 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
         return {"ok": True}
 
     except Exception as e:
-        logger.error("DEBUG: Exception in webhook", error=str(e))
+        print(f"DEBUG: ===== EXCEPTION IN WEBHOOK: {e} =====")
         logger.error(
             "Error processing Telegram webhook",
             error=str(e),
