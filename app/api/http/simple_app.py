@@ -1,6 +1,6 @@
 """Simple FastAPI app for testing."""
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 # Create FastAPI app
 app = FastAPI(
@@ -20,6 +20,18 @@ async def test_endpoint():
     return {"status": "test working"}
 
 @app.post("/v1/telegram/webhook")
-async def telegram_webhook():
+async def telegram_webhook(request: Request):
     """Telegram webhook endpoint."""
-    return {"status": "webhook received"}
+    # Get JSON data
+    data = await request.json()
+
+    # Basic message processing
+    message = data.get("message", {})
+    text = message.get("text", "")
+
+    if text.startswith("/start"):
+        return {"status": "start command received"}
+    elif text.startswith("/help"):
+        return {"status": "help command received"}
+    else:
+        return {"status": "message received"}
