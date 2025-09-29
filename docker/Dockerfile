@@ -56,4 +56,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 EXPOSE 8000
 
 # Default command - Railway provides PORT variable
+# Updated: 2025-01-28 - force rebuild
 CMD ["sh", "-c", "uvicorn app.api.http.simple_app:app --host 0.0.0.0 --port ${PORT:-8000} --reload"]
