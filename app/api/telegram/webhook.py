@@ -61,6 +61,16 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
         # Handle different message types
         if text:
             logger.error("DEBUG: Processing text message", text=text[:100])
+
+            # For testing - just log without processing
+            if text == "/ping":
+                logger.error("DEBUG: Received /ping command - would respond with Pong!")
+                # Don't actually send message to avoid recursion in test
+                return {"status": "ping_received"}
+            elif text == "/start":
+                logger.error("DEBUG: Received /start command - would send welcome!")
+                return {"status": "start_received"}
+
             try:
                 # Handle text messages (including commands)
                 await telegram_service.process_text_message(chat_id, text, message_id)
