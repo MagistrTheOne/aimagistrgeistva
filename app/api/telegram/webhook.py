@@ -66,17 +66,15 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
         if text:
             print(f"DEBUG: Processing text message: {text[:100]}")
 
-            # For testing - just log without processing
-            if text == "/ping":
-                with open("/tmp/webhook_debug.log", "a") as f:
-                    f.write("===== RECEIVED /ping COMMAND =====\n")
-                print("DEBUG: ===== RECEIVED /ping COMMAND =====")
-                return {"status": "ping_received"}
-            elif text == "/start":
-                with open("/tmp/webhook_debug.log", "a") as f:
-                    f.write("===== RECEIVED /start COMMAND =====\n")
-                print("DEBUG: ===== RECEIVED /start COMMAND =====")
-                return {"status": "start_received"}
+            # For testing - respond to any message
+            with open("/tmp/webhook_debug.log", "a") as f:
+                f.write(f"===== RECEIVED MESSAGE: {text} =====\n")
+            print(f"DEBUG: ===== RECEIVED MESSAGE: {text} =====")
+
+            # Simple test response
+            if text and len(text.strip()) > 0:
+                print(f"DEBUG: ===== MESSAGE PROCESSED SUCCESSFULLY =====")
+                return {"status": "message_processed"}
 
             try:
                 print("DEBUG: Calling process_text_message...")
