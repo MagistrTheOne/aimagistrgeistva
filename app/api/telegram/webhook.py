@@ -5,11 +5,11 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Request
 
-from app.core.logging import get_structlog_logger
-from app.services.integrations.telegram import telegram_service
+# from app.core.logging import get_structlog_logger
+# from app.services.integrations.telegram import telegram_service
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
-logger = get_structlog_logger(__name__)
+# logger = get_structlog_logger(__name__)
 
 
 @router.post("/webhook")
@@ -32,12 +32,12 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
         print(f"DEBUG: ===== WEBHOOK RECEIVED =====")
         print(f"DEBUG: Update data: {str(update_data)[:500]}")
 
-        logger.info(
-            "Received Telegram update",
-            update_id=update_data.get("update_id"),
-            message_text=update_data.get("message", {}).get("text", "unknown"),
-            chat_id=update_data.get("message", {}).get("chat", {}).get("id")
-        )
+        # logger.info(
+        #     "Received Telegram update",
+        #     update_id=update_data.get("update_id"),
+        #     message_text=update_data.get("message", {}).get("text", "unknown"),
+        #     chat_id=update_data.get("message", {}).get("chat", {}).get("id")
+        # )
 
         # Extract message data
         message = update_data.get("message", {})
@@ -60,6 +60,7 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
 
         if not chat_id or not message_id:
             print(f"DEBUG: Invalid message format")
+            # logger.warning("Invalid message format", update_data=update_data)
             return {"ok": True}
 
         # Handle different message types
@@ -88,23 +89,23 @@ async def telegram_webhook(request: Request) -> Dict[str, Any]:
             else:
                 print("DEBUG: Voice message without file_id")
         else:
-            print("DEBUG: Unknown message type, sending help")
-            # Unknown message type - send help
-            await telegram_service.send_message(
-                chat_id=chat_id,
-                text="Извините, я пока умею работать только с текстовыми и голосовыми сообщениями. Используйте /help для справки.",
-                reply_to_message_id=message_id
-            )
+            print("DEBUG: Unknown message type")
+            # Unknown message type - would send help
+            # await telegram_service.send_message(
+            #     chat_id=chat_id,
+            #     text="Извините, я пока умею работать только с текстовыми и голосовыми сообщениями. Используйте /help для справки.",
+            #     reply_to_message_id=message_id
+            # )
 
         return {"ok": True}
 
     except Exception as e:
         print(f"DEBUG: ===== EXCEPTION IN WEBHOOK: {e} =====")
-        logger.error(
-            "Error processing Telegram webhook",
-            error=str(e),
-            error_type=type(e).__name__
-        )
+        # logger.error(
+        #     "Error processing Telegram webhook",
+        #     error=str(e),
+        #     error_type=type(e).__name__
+        # )
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -117,11 +118,13 @@ async def _handle_callback_query(callback_query: Dict[str, Any]) -> Dict[str, An
         callback_data = callback_query.get("data")
 
         if not all([query_id, chat_id, message_id, callback_data]):
-            logger.warning("Invalid callback query format", callback_query=callback_query)
+            print("DEBUG: Invalid callback query format")
+            # logger.warning("Invalid callback query format", callback_query=callback_query)
             return {"ok": True}
 
-        # Process the callback
-        await telegram_service.process_callback_query(chat_id, callback_data, message_id)
+        # Process the callback - disabled for testing
+        print(f"DEBUG: Would process callback: {callback_data}")
+        # await telegram_service.process_callback_query(chat_id, callback_data, message_id)
 
         # Answer the callback query (remove loading state from button)
         return {
@@ -130,11 +133,12 @@ async def _handle_callback_query(callback_query: Dict[str, Any]) -> Dict[str, An
         }
 
     except Exception as e:
-        logger.error(
-            "Error processing callback query",
-            error=str(e),
-            callback_query=callback_query
-        )
+        print(f"DEBUG: Error in callback query: {e}")
+        # logger.error(
+        #     "Error processing callback query",
+        #     error=str(e),
+        #     callback_query=callback_query
+        # )
         return {"ok": True}
 
 
