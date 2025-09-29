@@ -57,6 +57,14 @@ class CommandHandler:
             await self._cmd_quiz(chat_id, message_id, cmd_parts)
         elif cmd == "/mood":
             await self._cmd_mood(chat_id, message_id)
+        elif cmd == "/task":
+            await self._cmd_task(chat_id, message_id, cmd_parts)
+        elif cmd == "/tasks":
+            await self._cmd_tasks(chat_id, message_id)
+        elif cmd == "/expense":
+            await self._cmd_expense(chat_id, message_id, cmd_parts)
+        elif cmd == "/expenses":
+            await self._cmd_expenses(chat_id, message_id)
         else:
             await self.telegram_service.send_message(
                 chat_id=chat_id,
@@ -108,6 +116,14 @@ class CommandHandler:
 /image [описание] - описание для изображений
 /remind [время] [напоминание] - напоминания
 /calc [выражение] - калькулятор
+
+📋 **Управление задачами:**
+/task [описание] - создать задачу (AI поймет сроки и приоритеты)
+/tasks - показать все задачи
+
+💰 **Финансы:**
+/expense [сумма] [категория] [описание] - добавить расход
+/expenses - показать расходы
 
 🎮 **Интерактив:**
 /poll [вопрос] [варианты] - создать опрос
@@ -460,6 +476,166 @@ class CommandHandler:
             await self.telegram_service.send_message(
                 chat_id=chat_id,
                 text="❌ Не удалось проверить настроение. Попробуйте позже.",
+                reply_to_message_id=message_id
+            )
+
+    async def _cmd_task(self, chat_id: int, message_id: int, cmd_parts: List[str]) -> None:
+        """Handle /task command."""
+        if len(cmd_parts) < 2:
+            await self.telegram_service.send_message(
+                chat_id=chat_id,
+                text="Использование: /task [описание задачи]\nПример: /task Подготовить презентацию к пятнице",
+                reply_to_message_id=message_id
+            )
+            return
+
+        try:
+            from app.services.automations.task_service import task_service
+            from app.api.http.app import TaskCreateRequest
+
+            task_text = " ".join(cmd_parts[1:])
+            request = TaskCreateRequest(title=task_text)
+
+            task = await task_service.create_task(str(chat_id), request)
+
+            response = f"✅ Задача создана!\n\n📝 {task.title}"
+            if task.description:
+                response += f"\n📄 {task.description}"
+            if task.due_date:
+                response += f"\n⏰ Срок: {task.due_date}"
+            response += f"\n🎯 Приоритет: {task.priority}/5"
+
+            await self.telegram_service.send_message(
+                chat_id=chat_id,
+                text=response,
+                reply_to_message_id=message_id
+            )
+        except Exception as e:
+            await self.telegram_service.send_message(
+                chat_id=chat_id,
+                text="❌ Не удалось создать задачу. Попробуйте позже.",
+                reply_to_message_id=message_id
+            )
+
+    async def _cmd_tasks(self, chat_id: int, message_id: int) -> None:
+        """Handle /tasks command."""
+        try:
+            from app.services.automations.task_service import task_service
+
+            tasks = await task_service.get_user_tasks(str(chat_id), limit=10)
+
+            if not tasks:
+                await self.telegram_service.send_message(
+                    chat_id=chat_id,
+                    text="📝 У вас пока нет задач. Создайте первую командой /task",
+                    reply_to_message_id=message_id
+                )
+                return
+
+            response = "📋 Ваши задачи:\n\n"
+            for i, task in enumerate(tasks[:5], 1):  # Show first 5
+                status_emoji = {"pending": "⏳", "in_progress": "🔄", "completed": "✅", "cancelled": "❌"}.get(task.status, "❓")
+                response += f"{i}. {status_emoji} {task.title}\n"
+                if task.due_date:
+                    response += f"   ⏰ {task.due_date}\n"
+                response += "\n"
+
+            if len(tasks) > 5:
+                response += f"... и ещё {len(tasks) - 5} задач"
+
+            await self.telegram_service.send_message(
+                chat_id=chat_id,
+                text=response,
+                reply_to_message_id=message_id
+            )
+        except Exception as e:
+            await self.telegram_service.send_message(
+                chat_id=chat_id,
+                text="❌ Не удалось загрузить задачи. Попробуйте позже.",
+                reply_to_message_id=message_id
+            )
+
+    async def _cmd_expense(self, chat_id: int, message_id: int, cmd_parts: List[str]) -> None:
+        """Handle /expense command."""
+        if len(cmd_parts) < 4:
+            await self.telegram_service.send_message(
+                chat_id=chat_id,
+                text="Использование: /expense [сумма] [категория] [описание]\nПример: /expense 500 еда обед в ресторане",
+                reply_to_message_id=message_id
+            )
+            return
+
+        try:
+            from app.services.automations.finance_service import finance_service
+            from app.api.http.app import ExpenseCreateRequest
+
+            amount = float(cmd_parts[1])
+            category = cmd_parts[2]
+            description = " ".join(cmd_parts[3:])
+
+            request = ExpenseCreateRequest(
+                amount=amount,
+                category=category,
+                description=description
+            )
+
+            expense = await finance_service.add_expense(str(chat_id), request)
+
+            response = f"✅ Расход добавлен!\n\n💰 {expense.amount} ₽\n📂 {expense.category}\n📝 {expense.description}"
+
+            await self.telegram_service.send_message(
+                chat_id=chat_id,
+                text=response,
+                reply_to_message_id=message_id
+            )
+        except ValueError:
+            await self.telegram_service.send_message(
+                chat_id=chat_id,
+                text="❌ Неверный формат суммы. Используйте число.",
+                reply_to_message_id=message_id
+            )
+        except Exception as e:
+            await self.telegram_service.send_message(
+                chat_id=chat_id,
+                text="❌ Не удалось добавить расход. Попробуйте позже.",
+                reply_to_message_id=message_id
+            )
+
+    async def _cmd_expenses(self, chat_id: int, message_id: int) -> None:
+        """Handle /expenses command."""
+        try:
+            from app.services.automations.finance_service import finance_service
+
+            expenses = await finance_service.get_user_expenses(str(chat_id), limit=10)
+
+            if not expenses:
+                await self.telegram_service.send_message(
+                    chat_id=chat_id,
+                    text="💰 У вас пока нет расходов. Добавьте первый командой /expense",
+                    reply_to_message_id=message_id
+                )
+                return
+
+            total = sum(exp.amount for exp in expenses)
+            response = f"💰 Ваши расходы (всего: {total:.2f} ₽):\n\n"
+
+            for i, expense in enumerate(expenses[:5], 1):  # Show first 5
+                response += f"{i}. {expense.amount:.2f} ₽ - {expense.category}\n"
+                response += f"   📝 {expense.description}\n"
+                response += f"   📅 {expense.date.strftime('%d.%m.%Y')}\n\n"
+
+            if len(expenses) > 5:
+                response += f"... и ещё {len(expenses) - 5} расходов"
+
+            await self.telegram_service.send_message(
+                chat_id=chat_id,
+                text=response,
+                reply_to_message_id=message_id
+            )
+        except Exception as e:
+            await self.telegram_service.send_message(
+                chat_id=chat_id,
+                text="❌ Не удалось загрузить расходы. Попробуйте позже.",
                 reply_to_message_id=message_id
             )
 
