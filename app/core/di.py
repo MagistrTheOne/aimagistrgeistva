@@ -1,6 +1,6 @@
 """Dependency Injection container."""
 
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.core.config import settings
 
